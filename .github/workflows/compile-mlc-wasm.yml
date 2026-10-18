@@ -103,7 +103,6 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           export TVM_SOURCE_DIR=$PWD/tvm MLC_LLM_SOURCE_DIR=$PWD/mlc-llm TVM_HOME=$PWD/tvm
-          export SKIP_LOADING_MLCLLM_SO=1
           export PYTHONPATH=$PWD/tvm/python:$PWD/mlc-llm/python
           export TVM_LIBRARY_PATH=$PWD/mlc-llm/build/lib:$PWD/tvm/build
           export MLC_LIBRARY_PATH=$PWD/mlc-llm/build
@@ -116,10 +115,10 @@ jobs:
           OUT=out/$(basename "${{ inputs.target_repo }}")
           mkdir -p "$OUT" src
           hf download "${{ inputs.source_model }}" --local-dir src
-          python -m mlc_llm convert_weight src --quantization "$Q" --output "$OUT"
+          SKIP_LOADING_MLCLLM_SO=1 python -m mlc_llm convert_weight src --quantization "$Q" --output "$OUT"
           python -m mlc_llm gen_config src --quantization "$Q" \
               --conv-template "${{ inputs.conv_template }}" --output "$OUT"
-          python -m mlc_llm compile "$OUT/mlc-chat-config.json" \
+          SKIP_LOADING_MLCLLM_SO=1 python -m mlc_llm compile "$OUT/mlc-chat-config.json" \
               --quantization "$Q" --device webgpu \
               --overrides "prefill_chunk_size=${{ inputs.prefill_chunk_size }}" \
               --output "$OUT/$(basename "$OUT")-webgpu.wasm"

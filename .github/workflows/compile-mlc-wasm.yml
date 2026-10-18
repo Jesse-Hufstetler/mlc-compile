@@ -104,6 +104,7 @@ jobs:
           export PYTHONPATH=$PWD/tvm/python:$PWD/mlc-llm/python
           export TVM_LIBRARY_PATH=$PWD/mlc-llm/build/lib:$PWD/tvm/build
           export MLC_LIBRARY_PATH=$PWD/mlc-llm/build
+          if [ -d tvm/3rdparty/tvm-ffi ]; then pip install ./tvm/3rdparty/tvm-ffi; else pip install apache-tvm-ffi; fi
           Q=${{ inputs.quantization }}
           OUT=out/$(basename "${{ inputs.target_repo }}")
           mkdir -p "$OUT" src

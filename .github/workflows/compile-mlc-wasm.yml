@@ -24,6 +24,9 @@ on:
         default: "chatml"
       prefill_chunk_size:
         default: "1024"
+      context_window_size:
+        description: "KV-cache context length (the model native max is too big for WebGPU)"
+        default: "4096"
 
 env:
   TVM_REPO: https://github.com/akaashrp/tvm
@@ -117,10 +120,12 @@ jobs:
           hf download "${{ inputs.source_model }}" --local-dir src
           SKIP_LOADING_MLCLLM_SO=1 python -m mlc_llm convert_weight src --quantization "$Q" --output "$OUT"
           python -m mlc_llm gen_config src --quantization "$Q" \
-              --conv-template "${{ inputs.conv_template }}" --output "$OUT"
+              --conv-template "${{ inputs.conv_template }}" \
+              --context-window-size "${{ inputs.context_window_size }}" \
+              --prefill-chunk-size "${{ inputs.prefill_chunk_size }}" --output "$OUT"
           SKIP_LOADING_MLCLLM_SO=1 python -m mlc_llm compile "$OUT/mlc-chat-config.json" \
               --quantization "$Q" --device webgpu \
-              --overrides "prefill_chunk_size=${{ inputs.prefill_chunk_size }}" \
+              --overrides "context_window_size=${{ inputs.context_window_size }};prefill_chunk_size=${{ inputs.prefill_chunk_size }}" \
               --output "$OUT/$(basename "$OUT")-webgpu.wasm"
           ls -lh "$OUT"
 

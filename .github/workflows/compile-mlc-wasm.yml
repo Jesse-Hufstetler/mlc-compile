@@ -27,6 +27,9 @@ on:
       context_window_size:
         description: "KV-cache context length (the model native max is too big for WebGPU)"
         default: "4096"
+      n_loops:
+        description: "Dory only: recurrent loops baked into the compiled graph (1, 2 or 4); blank = keep config"
+        default: ""
 
 env:
   TVM_REPO: https://github.com/akaashrp/tvm
@@ -39,6 +42,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
 
@@ -56,6 +66,9 @@ jobs:
         run: |
           git clone "$TVM_REPO" tvm && git -C tvm checkout "$TVM_COMMIT" && git -C tvm submodule update --init --recursive
           git clone "$MLC_REPO" mlc-llm && git -C mlc-llm checkout "$MLC_COMMIT" && git -C mlc-llm submodule update --init --recursive
+
+      - name: Install Dory model patch
+        run: python patches/dory/apply.py "$PWD/mlc-llm"
 
       - name: Restore build cache
         uses: actions/cache/restore@v4
@@ -118,6 +131,15 @@ jobs:
           OUT=out/$(basename "${{ inputs.target_repo }}")
           mkdir -p "$OUT" src
           hf download "${{ inputs.source_model }}" --local-dir src
+          if [ -n "${{ inputs.n_loops }}" ]; then
+            python - <<PY
+          import json
+          p = "src/config.json"
+          c = json.load(open(p))
+          c["n_recurrent_loops"] = int("${{ inputs.n_loops }}")
+          json.dump(c, open(p, "w"), indent=2)
+          PY
+          fi
           SKIP_LOADING_MLCLLM_SO=1 python -m mlc_llm convert_weight src --quantization "$Q" --output "$OUT"
           python -m mlc_llm gen_config src --quantization "$Q" \
               --conv-template "${{ inputs.conv_template }}" \

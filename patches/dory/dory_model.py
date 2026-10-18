@@ -106,11 +106,13 @@ def l2norm(x: Tensor) -> Tensor:
     return op.wrap_nested(out, "dory_l2norm")
 
 
-def apply_rope(values: Tensor, positions: Tensor, theta: float, name: str) -> Tensor:
+def apply_rope(
+    values: Tensor, positions: Tensor, theta: float, head_dim: int, name: str
+) -> Tensor:
     """NeoX-style (rotate-half) RoPE over the full head dim; values: (b, s, h, d)."""
 
     def _rope(values: te.Tensor, position_map: te.Tensor):
-        batch, seq_len, _, head_dim = values.shape
+        _, seq_len, _, _ = values.shape
         half_dim = head_dim // 2
         dtype = values.dtype
 
@@ -169,9 +171,9 @@ class DoryLayer(nn.Module):
         q = op.reshape(q, (b, s, self.nh, self.hd))
         k = op.reshape(k, (b, s, self.nkv, self.hd))
         v = op.reshape(v, (b, s, self.nkv, self.hd))
-        q = apply_rope(l2norm(q), positions, self.theta, "dory_q_rope")
+        q = apply_rope(l2norm(q), positions, self.theta, self.hd, "dory_q_rope")
         q = q * op.reshape(self.sq, (1, 1, self.nh, self.hd))
-        k = apply_rope(l2norm(k), positions, self.theta, "dory_k_rope")
+        k = apply_rope(l2norm(k), positions, self.theta, self.hd, "dory_k_rope")
         gate = op.sigmoid(g * self.sgate)
         qkv = op.concat([q, k, v], dim=2)
         out = cache.attention_with_fused_qkv(

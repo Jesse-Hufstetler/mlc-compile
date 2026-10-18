@@ -105,7 +105,7 @@ jobs:
           export TVM_LIBRARY_PATH=$PWD/mlc-llm/build/lib:$PWD/tvm/build
           export MLC_LIBRARY_PATH=$PWD/mlc-llm/build
           if [ -d tvm/3rdparty/tvm-ffi ]; then pip install ./tvm/3rdparty/tvm-ffi; else pip install apache-tvm-ffi; fi
-          grep -vE "flashinfer|apache-tvm-ffi|^torch\  mlc-llm/python/requirements.txt > /tmp/mlc-reqs.txt
+          grep -vE 'flashinfer|apache-tvm-ffi|^torch' mlc-llm/python/requirements.txt > /tmp/mlc-reqs.txt
           pip install -r /tmp/mlc-reqs.txt
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           Q=${{ inputs.quantization }}

@@ -45,7 +45,7 @@ jobs:
       - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build llvm-17-dev libzstd-dev git-lfs
+          sudo apt-get install -y cmake ninja-build llvm-17-dev libpolly-17-dev libzstd-dev git-lfs
           pip install numpy cython packaging psutil pyyaml typing_extensions huggingface_hub \
               transformers safetensors sentencepiece tiktoken ml_dtypes tqdm requests
 

@@ -110,6 +110,7 @@ jobs:
           if [ -d tvm/3rdparty/tvm-ffi ]; then pip install ./tvm/3rdparty/tvm-ffi; else pip install apache-tvm-ffi; fi
           grep -vE 'flashinfer|apache-tvm-ffi|^torch' mlc-llm/python/requirements.txt > /tmp/mlc-reqs.txt
           pip install -r /tmp/mlc-reqs.txt
+          pip install apache-tvm-ffi-orcjit==0.1.2
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           Q=${{ inputs.quantization }}
           OUT=out/$(basename "${{ inputs.target_repo }}")

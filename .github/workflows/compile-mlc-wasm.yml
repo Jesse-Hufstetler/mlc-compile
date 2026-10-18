@@ -1,0 +1,108 @@
+# Compile a Hugging Face model into an MLC/WebLLM package (weights + WebGPU wasm)
+# and upload it to the Hugging Face repo you name.
+#
+# UNTESTED DRAFT. TVM/MLC-LLM are pinned to the exact commits behind web-llm
+# 0.2.86's prebuilt wasm (see build-manifest.json in mlc-ai/binary-mlc-llm-libs),
+# because the wasm must match the TVM runtime that web-llm ships.
+#
+# Needs a repo secret HF_TOKEN (write access to the target HF namespace).
+name: compile-mlc-wasm
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_model:
+        description: "Source HF model (must be a architecture MLC supports)"
+        default: "openbmb/MiniCPM5-2B"
+      target_repo:
+        description: "HF repo to create, e.g. YourUser/MiniCPM5-2B-q4f16_1-MLC"
+        required: true
+      quantization:
+        default: "q4f16_1"
+      conv_template:
+        description: "MLC conversation template (check the model's chat template!)"
+        default: "chatml"
+      prefill_chunk_size:
+        default: "1024"
+
+env:
+  TVM_REPO: https://github.com/akaashrp/tvm
+  TVM_COMMIT: be03dc94b001269b88ae010d2ac352256be55579
+  MLC_REPO: https://github.com/akaashrp/mlc-llm
+  MLC_COMMIT: 42fa855891fcb5825bf0911047d7c91e8234abd1
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with: { version: "3.1.56" }
+
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build llvm-17-dev libzstd-dev git-lfs
+          pip install numpy cython packaging psutil pyyaml typing_extensions huggingface_hub \
+              transformers safetensors sentencepiece tiktoken ml_dtypes tqdm requests
+
+      - name: Fetch pinned sources
+        run: |
+          git clone "$TVM_REPO" tvm && git -C tvm checkout "$TVM_COMMIT" && git -C tvm submodule update --init --recursive
+          git clone "$MLC_REPO" mlc-llm && git -C mlc-llm checkout "$MLC_COMMIT" && git -C mlc-llm submodule update --init --recursive
+
+      - name: Build TVM (native)
+        run: |
+          mkdir -p tvm/build && cd tvm/build
+          cp ../cmake/config.cmake .
+          echo 'set(USE_LLVM "llvm-config-17 --ignore-libllvm --link-static")' >> config.cmake
+          echo 'set(HIDE_PRIVATE_SYMBOLS ON)' >> config.cmake
+          cmake -G Ninja .. && ninja
+
+      - name: Build MLC-LLM (native)
+        run: |
+          mkdir -p mlc-llm/build && cd mlc-llm/build
+          cmake -G Ninja -DUSE_CUDA=OFF -DUSE_VULKAN=OFF -DUSE_METAL=OFF .. && ninja
+
+      - name: Build wasm bitcode
+        run: |
+          export TVM_SOURCE_DIR=$PWD/tvm MLC_LLM_SOURCE_DIR=$PWD/mlc-llm TVM_HOME=$PWD/tvm
+          (cd mlc-llm/web && make)
+          (cd tvm/web && make)
+
+      - name: Convert weights, generate config, compile wasm
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          export TVM_SOURCE_DIR=$PWD/tvm MLC_LLM_SOURCE_DIR=$PWD/mlc-llm TVM_HOME=$PWD/tvm
+          export SKIP_LOADING_MLCLLM_SO=1
+          export PYTHONPATH=$PWD/tvm/python:$PWD/mlc-llm/python
+          export TVM_LIBRARY_PATH=$PWD/mlc-llm/build/lib:$PWD/tvm/build
+          export MLC_LIBRARY_PATH=$PWD/mlc-llm/build
+          Q=${{ inputs.quantization }}
+          OUT=out/$(basename "${{ inputs.target_repo }}")
+          mkdir -p "$OUT" src
+          huggingface-cli download "${{ inputs.source_model }}" --local-dir src
+          python -m mlc_llm convert_weight src --quantization "$Q" --output "$OUT"
+          python -m mlc_llm gen_config src --quantization "$Q" \
+              --conv-template "${{ inputs.conv_template }}" --output "$OUT"
+          python -m mlc_llm compile "$OUT/mlc-chat-config.json" \
+              --quantization "$Q" --device webgpu \
+              --overrides "prefill_chunk_size=${{ inputs.prefill_chunk_size }}" \
+              --output "$OUT/$(basename "$OUT")-webgpu.wasm"
+          ls -lh "$OUT"
+
+      - name: Upload to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          OUT=out/$(basename "${{ inputs.target_repo }}")
+          huggingface-cli upload "${{ inputs.target_repo }}" "$OUT" . --repo-type model
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlc-package
+          path: out/

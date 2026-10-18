@@ -66,6 +66,7 @@ jobs:
           key: mlc-build-${{ env.TVM_COMMIT }}-${{ env.MLC_COMMIT }}
 
       - name: Build TVM (native)
+        if: steps.buildcache.outputs.cache-hit != 'true'
         run: |
           mkdir -p tvm/build && cd tvm/build
           cp ../cmake/config.cmake .
@@ -74,11 +75,13 @@ jobs:
           cmake -G Ninja .. && ninja
 
       - name: Build MLC-LLM (native)
+        if: steps.buildcache.outputs.cache-hit != 'true'
         run: |
           mkdir -p mlc-llm/build && cd mlc-llm/build
           cmake -G Ninja -DUSE_CUDA=OFF -DUSE_VULKAN=OFF -DUSE_METAL=OFF .. && ninja
 
       - name: Build wasm bitcode
+        if: steps.buildcache.outputs.cache-hit != 'true'
         run: |
           export TVM_SOURCE_DIR=$PWD/tvm MLC_LLM_SOURCE_DIR=$PWD/mlc-llm TVM_HOME=$PWD/tvm
           (cd mlc-llm/web && make)

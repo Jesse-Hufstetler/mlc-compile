@@ -54,6 +54,17 @@ jobs:
           git clone "$TVM_REPO" tvm && git -C tvm checkout "$TVM_COMMIT" && git -C tvm submodule update --init --recursive
           git clone "$MLC_REPO" mlc-llm && git -C mlc-llm checkout "$MLC_COMMIT" && git -C mlc-llm submodule update --init --recursive
 
+      - name: Restore build cache
+        uses: actions/cache/restore@v4
+        id: buildcache
+        with:
+          path: |
+            tvm/build
+            mlc-llm/build
+            tvm/web/dist
+            mlc-llm/web/dist
+          key: mlc-build-${{ env.TVM_COMMIT }}-${{ env.MLC_COMMIT }}
+
       - name: Build TVM (native)
         run: |
           mkdir -p tvm/build && cd tvm/build
@@ -73,6 +84,17 @@ jobs:
           (cd mlc-llm/web && make)
           (cd tvm/web && make)
 
+      - name: Save build cache
+        if: steps.buildcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            tvm/build
+            mlc-llm/build
+            tvm/web/dist
+            mlc-llm/web/dist
+          key: mlc-build-${{ env.TVM_COMMIT }}-${{ env.MLC_COMMIT }}
+
       - name: Convert weights, generate config, compile wasm
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -85,7 +107,7 @@ jobs:
           Q=${{ inputs.quantization }}
           OUT=out/$(basename "${{ inputs.target_repo }}")
           mkdir -p "$OUT" src
-          huggingface-cli download "${{ inputs.source_model }}" --local-dir src
+          hf download "${{ inputs.source_model }}" --local-dir src
           python -m mlc_llm convert_weight src --quantization "$Q" --output "$OUT"
           python -m mlc_llm gen_config src --quantization "$Q" \
               --conv-template "${{ inputs.conv_template }}" --output "$OUT"
@@ -100,7 +122,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           OUT=out/$(basename "${{ inputs.target_repo }}")
-          huggingface-cli upload "${{ inputs.target_repo }}" "$OUT" . --repo-type model
+          hf upload "${{ inputs.target_repo }}" "$OUT" . --repo-type model
 
       - uses: actions/upload-artifact@v4
         with:
